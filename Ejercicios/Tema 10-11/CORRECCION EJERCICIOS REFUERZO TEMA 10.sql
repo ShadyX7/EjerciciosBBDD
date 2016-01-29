@@ -1,0 +1,296 @@
+1. Crea un procedimiento que elimina los empleados de un departamento, pero previamente toma los datos 
+iniciales de los empleados y los inserta en una tabla de histórico. 
+Observación: Crea una tabla como EMPLE y la llamas EMPLE_H.
+
+CREATE TABLE EMPLE_H AS SELECT * FROM EMPLE;
+TRUNCATE TABLE EMPLE_H;
+
+CREATE OR REPLACE PROCEDURE EJER_REF_10_1(DEP NUMBER)
+AS
+BEGIN
+INSERT INTO EMPLE_H SELECT * FROM EMPLE WHERE DEPT_NO=DEP;
+DELETE FROM EMPLE WHERE DEPT_NO=DEP;
+EXCEPTION
+WHEN OTHERS THEN
+ DBMS_OUTPUT.PUT_LINE('ERROR');
+END EJER_REF_10_1;
+
+BEGIN EJER_REF_10_1(10); END
+
+
+2.Crea un procedimiento al que le pasamos el nombre de un departamento. 
+Con este dato halla el salario medio del departamento y a todos los empleados que 
+no superan esa media se los pasa al departamento de VENTAS. 
+Igualmente que en el ejercicio anterior a todos estos empleados los insertamos 
+en la tabla EMPLE_H con sus datos originales.
+
+CREATE OR REPLACE PROCEDURE EJER_REF_10_2(DNOM VARCHAR2)
+AS
+V_SAL_MED NUMBER(6,2);
+V_DEPT_NO NUMBER(2);
+CURSOR C1(DEP NUMBER) IS SELECT * FROM EMPLE 
+WHERE DEPT_NO=DEP AND SALARIO < (SELECT AVG(SALARIO) FROM EMPLE 
+  WHERE DEPT_NO=DEP) 
+  FOR UPDATE;
+
+BEGIN
+SELECT DEPT_NO INTO V_DEPT_NO FROM DEPART WHERE DNOMBRE=DNOM;
+FOR V_REG IN C1(V_DEPT_NO) LOOP
+
+ INSERT INTO EMPLE_H VALUES (V_REG.EMP_NO, V_REG.APELLIDO, V_REG.OFICIO, 
+ V_REG.DIR,V_REG.FECHA_ALT, V_REG.SALARIO, V_REG.COMISION, V_REG.DEPT_NO);
+ 
+ UPDATE EMPLE SET DEPT_NO=(SELECT DEPT_NO FROM DEPART WHERE DNOMBRE='VENTAS') 
+ WHERE CURRENT OF C1;
+END LOOP;
+
+EXCEPTION
+ WHEN NO_DATA_FOUND THEN
+  DBMS_OUTPUT.PUT_LINE('NO HAY DATOS');
+ WHEN TOO_MANY_ROWS THEN
+  DBMS_OUTPUT.PUT_LINE('DEMASIADOS DATOS');
+ WHEN OTHERS THEN
+  DBMS_OUTPUT.PUT_LINE('ERROR');
+
+END EJER_REF_10_2;
+
+BEGIN EJER_REF_10_2('INVESTIGACION'); END;
+
+3.Desarrolla un procedimiento que nos permita crear nuevos ARTICULOS (pasamos como parámetros los datos de artículos) 
+controlando posibles fallos como que el fabricante no exista, precio_venta < precio_coste o cualquiera de estos es negativo 
+o las existencias negativas.
+CREATE OR REPLACE PROCEDURE EJER_REF_10_3 
+(ART VARCHAR2, COD NUMBER, PES NUMBER, CAT VARCHAR2, PV NUMBER, PC NUMBER, EXIS NUMBER)
+AS
+NO_FAB EXCEPTION;
+PVP_NEG EXCEPTION;
+PC_NEG EXCEPTION;
+EXIS_NEG EXCEPTION;
+PVP_PC EXCEPTION;
+V_NUM NUMBER(1);
+BEGIN
+SELECT COUNT(*) INTO V_NUM FROM FABRICANTES WHERE COD_FABRICANTE=COD;
+IF V_NUM=0 THEN
+ RAISE NO_FAB;
+END IF;
+IF PV < 0 THEN 
+ RAISE PVP_NEG;
+END IF;
+IF PC < 0 THEN
+ RAISE PC_NEG;
+END IF;
+IF PV <= PC THEN 
+ RAISE PVP_PC;
+END IF;
+INSERT INTO ARTICULOS VALUES (ART, COD, PES, CAT, PV, PC, EXIS);
+EXCEPTION
+WHEN NO_FAB THEN DBMS_OUTPUT.PUT_LINE('NO EXISTE EL FABRICANTE');
+WHEN PVP_NEG THEN DBMS_OUTPUT.PUT_LINE('PRECIO VENTA NEGATIVO');
+WHEN PC_NEG THEN DBMS_OUTPUT.PUT_LINE('PRECIO COSTO NEGATIVO');
+WHEN PVP_PC THEN DBMS_OUTPUT.PUT_LINE('PRECIO VENTA MENOR QUE PRECIO COSTO');
+
+END EJER_REF_10_3;
+
+BEGIN EJER_REF_10_3('AAA',10,1,'Primera',4,2,100); end;
+
+select count(*) from fabricantes where cod_fabricante=10;
+
+4.	Codifica un procedimiento que nos diga cuales son los tres empleados que ganan más en su departamento.
+CREATE OR REPLACE PROCEDURE EJER_REF_10_4
+AS
+CURSOR C1 IS SELECT APELLIDO, OFICIO, SALARIO, DEPT_NO FROM EMPLE ORDER BY DEPT_NO;
+DEP EMPLE.DEPT_NO%TYPE;
+I NUMBER(2); 
+BEGIN
+I:=1;
+DEP:=-1;
+
+FOR V_REG IN C1 LOOP
+
+IF (V_REG.DEPT_NO <> DEP) THEN 
+DEP := V_REG.DEPT_NO;
+I:=1;
+END IF;
+
+IF I <=3 THEN 
+DBMS_OUTPUT.PUT_LINE(RPAD(V_REG.APELLIDO,15)||' '||RPAD(V_REG.SALARIO,15)||' '||V_REG.DEPT_NO);
+I:=I+1;
+END IF;
+
+END LOOP;
+
+END EJERCICIO_4;
+
+BEGIN EJERCICIO_4; END;
+
+
+
+5. Crea un procedimiento que sube el precio de venta de los artículos de un fabricante. 
+Pasamos como parámetros un nuevo precio y un porcentaje (subida porcentual con respecto a 
+precio inicial) y subiremos la cantidad más pequeña. Controlamos que ninguno de los dos 
+parámetros es negativo y que el fabricante existe. Crea excepciones y asócialas con errores 
+que defines. (observación: Cursores For Update)
+
+CREATE OR REPLACE PROCEDURE EJER_REF_10_5 (COD NUMBER, PVP NUMBER, PCT NUMBER)
+AS
+CURSOR C1(COD_FAB NUMBER) IS SELECT * FROM ARTICULOS WHERE COD_FABRICANTE=COD_FAB FOR UPDATE;
+V_PVP NUMBER(4,2);
+V_COD NUMBER(1);
+NO_FAB EXCEPTION;
+PVP_NEG EXCEPTION;
+PCT_NEG EXCEPTION;
+
+BEGIN
+SELECT COUNT(*) INTO V_COD FROM FABRICANTES WHERE COD_FABRICANTE=COD;
+
+IF V_COD=0 THEN RAISE NO_FAB; END IF;
+IF PVP<0 THEN RAISE PVP_NEG; END IF;
+IF PCT<0 THEN RAISE PCT_NEG; END IF;
+
+FOR V_REG IN C1(COD) LOOP
+ V_PVP:=LEAST(PVP, V_REG.PRECIO_VENTA*(1+PCT/100));
+ UPDATE ARTICULOS SET PRECIO_VENTA=V_PVP WHERE CURRENT OF C1;
+END LOOP;
+
+EXCEPTION
+WHEN NO_FAB THEN DBMS_OUTPUT.PUT_LINE ('NO EXISTE EL FABRICANTE');
+WHEN PVP_NEG THEN DBMS_OUTPUT.PUT_LINE ('PVP NEGATIVO');
+WHEN PCT_NEG THEN DBMS_OUTPUT.PUT_LINE ('PCT NEGATIVO');
+
+END EJER_REF_10_5;
+
+BEGIN EJER_REF_10_5(10, 0.2, 20); END;
+
+
+6.Crea un procedimiento que calcule la suma de las unidades vendidas y la suma de 
+las unidades pedidas de un artículo que pasamos como parámetro, y entre dos fechas 
+predeterminadas. Con estos dos valores calculados los insertamos en una tabla 
+T_ARTICULO, que tendrá los campos: Articulo, Cod_fabricante, Peso, Categoría, 
+Unidades_Vendidas, Unidades_Pedidas; Observación: Si un artículo no tiene unidades 
+vendidas o pedidas esa suma tendrá como resultado 0. Gestiona las posibles excepciones.
+
+CREATE TABLE T_ARTICULOS
+(ARTICULOS VARCHAR2(20),
+COD_FABRICANTE NUMBER(3),
+PESO NUMBER(3),
+CATEGORIA VARCHAR2(10),
+UNIDADES_VENDIDAS NUMBER(4),
+UNIDADES_PEDIDAS NUMBER(4));
+
+CREATE OR REPLACE PROCEDURE EJER_REF_10_6(ART VARCHAR2, COD NUMBER, PES NUMBER, CAT VARCHAR2, F1 DATE, F2 DATE)
+AS
+UNIP NUMBER(4);
+UNIV NUMBER(4);
+BEGIN
+SELECT NVL(SUM(UNIDADES_PEDIDAS),0) INTO UNIP FROM PEDIDOS
+WHERE ARTICULO=ART AND COD_FABRICANTE=COD AND PESO=PES AND CATEGORIA=CAT 
+AND FECHA_PEDIDO BETWEEN F1 AND F2;
+
+SELECT NVL(SUM(UNIDADES_VENDIDAS),0) INTO UNIV FROM VENTAS
+WHERE ARTICULO=ART AND COD_FABRICANTE=COD AND PESO=PES AND CATEGORIA=CAT 
+AND FECHA_VENTA BETWEEN F1 AND F2;
+
+INSERT INTO T_ARTICULOS VALUES (ART, COD, PES, CAT, UNIV, UNIP);
+EXCEPTION
+WHEN OTHERS THEN
+ DBMS_OUTPUT.PUT_LINE('ERROR GENERAL');
+END EJER_REF_10_6;
+
+BEGIN EJER_REF_10_6('Macarrones', 20, 1, 'Primera', '01/01/1990', '31/12/2006');
+end;
+
+7. Crea un procedimiento que pasando como parámetro el nombre de un departamento 
+calcula el salario medio, máximo y mínimo (incluyendo la comisión) de ese departamento. 
+Además inserta en la tabla T_DEPART los valores: dept_no, salario_medio, salario_máximo, 
+salario_minimo y número de empleados. Gestiona las posibles excepciones.
+
+CREATE TABLE T_DEPART
+(DEPT_NO NUMBER(3),
+SALARIO_MEDIO NUMBER(7,2),
+SALARIO_MAXIMO NUMBER(5),
+SALARIO_MINIMO NUMBER(5),
+NUM_EMPLE NUMBER(3));
+
+CREATE OR REPLACE PROCEDURE EJER_REF_10_7(DNOM VARCHAR2)
+AS
+V_EXISTE NUMBER(1);
+CURSOR C1(NOM VARCHAR2) IS SELECT D.DEPT_NO, TRUNC(AVG(SALARIO),2) MED, 
+MAX(SALARIO) MAXIM, MIN(SALARIO) MINIM, COUNT(*) NUM
+FROM EMPLE E, DEPART D WHERE E.DEPT_NO=D.DEPT_NO AND DNOMBRE=NOM GROUP BY D.DEPT_NO;
+NO_EXISTE EXCEPTION;
+BEGIN
+SELECT COUNT(*) INTO V_EXISTE FROM DEPART WHERE DNOMBRE=DNOM;
+IF V_EXISTE= 0 THEN 
+ RAISE NO_EXISTE;
+END IF;
+FOR V_REG IN C1(DNOM) LOOP
+ INSERT INTO T_DEPART VALUES(V_REG.DEPT_NO, V_REG.MED, V_REG.MAXIM, V_REG.MINIM, V_REG.NUM);
+END LOOP;
+EXCEPTION
+WHEN NO_EXISTE THEN DBMS_OUTPUT.PUT_LINE('NO EXISTE EL DEPARTAMENTO');
+WHEN OTHERS THEN DBMS_OUTPUT.PUT_LINE('ERROR');
+END EJER_REF_10_7;
+/
+
+
+8. Crea un procedimiento que inserta valores en la tabla EMPLE y que actualiza los datos de la tabla T_DEPART. Es decir: si insertamos un empleado en CONTABILIDAD calculamos de nuevo todos los datos del procedimiento anterior y con esos datos actualizamos en T_DEPART.
+
+
+CREATE OR REPLACE PROCEDURE REFUERZO8 (EMP NUMBER, AP VARCHAR2, OFI VARCHAR2, D NUMBER, FECHA DATE, SAL NUMBER, COMI NUMBER, DEP NUMBER)
+AS
+V_MEDIA NUMBER(7,2);
+V_MAXIMO NUMBER(5);
+V_MINIMO NUMBER(5);
+V_NUMERO NUMBER(3);
+
+
+BEGIN
+
+INSERT INTO EMPLE VALUES (EMP, AP, OFI, D, FECHA, SAL, COMI, DEP);
+
+SELECT AVG(SALARIO+NVL(COMISION,0)),MAX(SALARIO+NVL(COMISION,0)),MIN(SALARIO+NVL(COMISION,0)), COUNT(*) 
+INTO V_MEDIA, V_MAXIMO, V_MINIMO, V_NUMERO FROM EMPLE 
+WHERE DEPT_NO = DEP;
+
+DELETE FROM T_DEPART WHERE DEPT_NO=DEP;
+INSERT INTO T_DEPART VALUES (DEP, V_MEDIA, V_MAXIMO, V_MINIMO, V_NUMERO);
+
+END REFUERZO8;
+9.	Crea un procedimiento que a partir de la tabla de artículos crea un resumen  contando el número de pedidos de cada uno 
+de los artículos. La información se muestra por pantalla. Si algún producto no tiene pedidos debe aparecer 0. 
+(Observación: Declara 2 cursores, uno para recorrer los artículos y otro los pedidos. El de los pedidos está anidado 
+dentro del cursor de los artículos.
+CREATE OR REPLACE PROCEDURE EJERCICIO9
+AS
+CURSOR C1 IS SELECT ARTICULO, COD_FABRICANTE, PESO,CATEGORIA FROM ARTICULOS;
+CURSOR C2(ART VARCHAR2, COD NUMBER, PES NUMBER, CAT VARCHAR2) IS SELECT NVL(COUNT(*),0) NUMERO_DE_PEDIDOS FROM PEDIDOS WHERE ARTICULO = ART AND COD_FABRICANTE = COD AND PESO = PES
+AND CATEGORIA = CAT;
+
+BEGIN
+
+FOR V_REG1 IN C1 LOOP
+ FOR V_REG2 IN C2(V_REG1.ARTICULO, V_REG1.COD_FABRICANTE, V_REG1.PESO, V_REG1.CATEGORIA) LOOP
+   DBMS_OUTPUT.PUT_LINE(RPAD(V_REG1.ARTICULO, 15)||' '||V_REG2.NUMERO_DE_PEDIDOS);
+ END LOOP;
+END LOOP;
+
+END EJERCICIO9;
+
+12.	Crea un procedimiento que muestre por cada uno de los centros el dinero gastado en salarios de sus empleados (Centros y Personal)
+
+CREATE OR REPLACE PROCEDURE EJER_REF_10_12
+AS
+CURSOR C1 IS SELECT C.COD_CENTRO,C.NOMBRE, SUM(SALARIO) SUMA FROM CENTROS C, PERSONAL P WHERE C.COD_CENTRO=P.COD_CENTRO
+GROUP BY C.COD_CENTRO,C.NOMBRE;
+BEGIN
+
+FOR VREG IN C1 LOOP
+ DBMS_OUTPUT.PUT_LINE(RPAD(VREG.COD_CENTRO,5)||' '||RPAD(VREG.NOMBRE,20)||' '||VREG.SUMA);
+END LOOP;
+
+END EJER_REF_10_12;
+
+BEGIN EJER_REF_10_12; END;
+
+
+
